@@ -1,3 +1,4 @@
+# aim-py-cw
 # -*- coding: utf-8 -*-
 """AIM 2627 Python Coursework —— 哨兵 Sentry 控制模块（学生骨架）。
 
@@ -11,6 +12,7 @@
 - `python main.py`（或 PYTHONPATH=src python -m main）可看 ASCII 演示。
 """
 import json
+import math
 from enum import Enum
 
 
@@ -36,12 +38,35 @@ class Facing(Enum):
 # ---------------------------------------------------------------------------
 def hp_ratio(hp, max_hp):
     """TODO(Q1)：血量百分比，返回 0-100 的 int；计算与边界规则见题面 Q1 规范。"""
-    raise NotImplementedError("Q1 hp_ratio：题面 Q1·血量百分比与精度保障")
+    try:
+        hp_value = float(hp)
+        max_hp_value = float(max_hp)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+    if (not math.isfinite(hp_value)
+            or not math.isfinite(max_hp_value)
+            or max_hp_value <= 0):
+        return 0
+
+    ratio = int(hp_value / max_hp_value * 100)
+    return max(0, min(100, ratio))
 
 
 def status_report(name, robot_type, hp, max_hp, battery):
     """TODO(Q1)：一行自检报告字符串；档位判定与逐字符格式见题面 Q1 规范。"""
-    raise NotImplementedError("Q1 status_report：题面 Q1·电量映射与报告格式")
+    hp_percent = hp_ratio(hp, max_hp)
+    battery_percent = hp_ratio(battery, 100)
+
+    if battery_percent >= 75:
+        tier = "OK"
+    elif battery_percent >= 30:
+        tier = "WARNING"
+    else:
+        tier = "LOW"
+
+    return (f"{name:<10}|{robot_type:^10}|HP {hp_percent:>3}%|"
+            f"BAT {battery_percent:>3}%|{tier}")
 
 
 # ---------------------------------------------------------------------------
