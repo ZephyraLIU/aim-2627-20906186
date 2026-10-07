@@ -75,7 +75,98 @@ def status_report(name, robot_type, hp, max_hp, battery):
 def analyze_damage_log(lines):
     """TODO(Q2)：解析混合格式伤害日志，返回固定契约的统计 dict；
     行格式、去重与统计口径见题面 Q2 规范。"""
-    raise NotImplementedError("Q2 analyze_damage_log：题面 Q2·多源日志解析与统计")
+    armor_names = {"F": "front", "L": "left", "R": "right"}
+    by_armor = {"front": 0, "left": 0, "right": 0}
+    total = 0
+    event_count = 0
+    seen_ids = []
+
+    def add_event(armor, damage):
+        nonlocal total, event_count
+        by_armor[armor] += damage
+        total += damage
+        event_count += 1
+
+    if isinstance(lines, (str, bytes, bytearray)) or lines is None:
+        lines = ()
+
+    try:
+        iterator = iter(lines)
+    except (TypeError, ValueError):
+        iterator = ()
+
+    try:
+        for raw_line in iterator:
+            if not isinstance(raw_line, str):
+                continue
+
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            if line.startswith("{"):
+                try:
+                    entry = json.loads(line)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+
+                if not isinstance(entry, dict):
+                    continue
+                armor = entry.get("armor")
+                damage = entry.get("damage")
+                if armor not in by_armor or type(damage) is not int or damage <= 0:
+                    continue
+
+                has_id = "id" in entry
+                identifier = entry.get("id")
+                if has_id and any(identifier == seen for seen in seen_ids):
+                    continue
+
+                add_event(armor, damage)
+                if has_id:
+                    seen_ids.append(identifier)
+                continue
+
+            parts = line.split(",")
+            parsed = []
+            valid = True
+            used_armor = set()
+            for part in parts:
+                field = part.strip()
+                if field.count(":") != 1:
+                    valid = False
+                    break
+                code, value = (piece.strip() for piece in field.split(":"))
+                if (code not in armor_names or code in used_armor
+                        or not value.isascii() or not value.isdigit()
+                        or int(value) <= 0):
+                    valid = False
+                    break
+                used_armor.add(code)
+                parsed.append((armor_names[code], int(value)))
+
+            if valid and parsed:
+                for armor, damage in parsed:
+                    add_event(armor, damage)
+    except Exception:
+        pass
+
+    if event_count == 0:
+        most_hit = None
+        average = 0.0
+    else:
+        most_hit = max(
+            ("front", "left", "right"),
+            key=lambda armor: by_armor[armor],
+        )
+        average = round(total / event_count, 2)
+
+    return {
+        "total": total,
+        "by_armor": by_armor,
+        "most_hit": most_hit,
+        "avg": average,
+    }
 
 
 # ---------------------------------------------------------------------------
