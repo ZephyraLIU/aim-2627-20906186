@@ -429,12 +429,128 @@ def decide(sensor, state, hp, heat):
 def run_patrol(grid, max_steps=500):
     """TODO(Q6)：sense → decide → act 主循环；
     循环结构、终止条件、脱困自由度与统计返回契约见题面 Q6 规范。"""
-    raise NotImplementedError("Q6 run_patrol：题面 Q6·主循环与统计契约")
+    steps = 0
+    visited = {grid.current_pos}
+    wall_mode = False
+    hand = "L"
+    wall_steps = 0
+    wall_seen = set()
+    entry_distance = 0
+    limit = max(1, grid.width + grid.height)
+
+    def distance(pos):
+        return abs(pos[0] - grid.enemy_pos[0]) + abs(
+            pos[1] - grid.enemy_pos[1])
+
+    def is_valid_direction(direction):
+        dx, dy = direction.delta
+        next_pos = (grid.current_pos[0] + dx, grid.current_pos[1] + dy)
+        return (not grid.is_blocked(*next_pos)
+                and distance(next_pos) < distance(grid.current_pos))
+
+    left_of = {
+        Facing.UP: Facing.LEFT,
+        Facing.LEFT: Facing.DOWN,
+        Facing.DOWN: Facing.RIGHT,
+        Facing.RIGHT: Facing.UP,
+    }
+    right_of = {value: key for key, value in left_of.items()}
+    opposite = {
+        Facing.UP: Facing.DOWN,
+        Facing.DOWN: Facing.UP,
+        Facing.LEFT: Facing.RIGHT,
+        Facing.RIGHT: Facing.LEFT,
+    }
+
+    def align_to(direction):
+        order = {
+            Facing.UP: 0,
+            Facing.RIGHT: 1,
+            Facing.DOWN: 2,
+            Facing.LEFT: 3,
+        }
+        turns_right = (order[direction] - order[grid.facing]) % 4
+        if turns_right == 3:
+            grid.turn_left()
+        else:
+            for _ in range(turns_right):
+                grid.turn_right()
+
+    def wall_direction():
+        current = grid.facing
+        side = left_of[current] if hand == "L" else right_of[current]
+        other_side = right_of[current] if hand == "L" else left_of[current]
+        choices = (side, current, other_side, opposite[current])
+        for direction in choices:
+            dx, dy = direction.delta
+            next_pos = (grid.current_pos[0] + dx,
+                        grid.current_pos[1] + dy)
+            if not grid.is_blocked(*next_pos):
+                return direction
+        return current
+
+    while (steps < max_steps and grid.fuel > 0
+           and not grid.found_enemy):
+        greedy_direction = next_step_toward(
+            grid.current_pos, grid.enemy_pos, grid.obstacles, grid.facing)
+        greedy_available = is_valid_direction(greedy_direction)
+
+        if greedy_available:
+            can_exit_wall = (not wall_mode
+                             or distance(grid.current_pos) <= entry_distance)
+            if can_exit_wall:
+                wall_mode = False
+                wall_steps = 0
+                wall_seen.clear()
+                direction = greedy_direction
+            else:
+                direction = None
+        else:
+            direction = None
+
+        if direction is None:
+            if not wall_mode:
+                wall_mode = True
+                hand = "L"
+                wall_steps = 0
+                wall_seen.clear()
+                entry_distance = distance(grid.current_pos)
+            state_key = (grid.current_pos, grid.facing, hand)
+            if state_key in wall_seen:
+                hand = "R" if hand == "L" else "L"
+                wall_seen.clear()
+                wall_steps = 0
+            wall_seen.add((grid.current_pos, grid.facing, hand))
+            direction = wall_direction()
+            wall_steps += 1
+            if wall_steps > limit:
+                hand = "R" if hand == "L" else "L"
+                wall_steps = 0
+                wall_seen.clear()
+
+        align_to(direction)
+        grid.move_forward()
+        steps += 1
+        visited.add(grid.current_pos)
+
+    found_enemy = grid.found_enemy
+    return {
+        "steps": steps,
+        "collisions": grid.collision_count,
+        "visited_count": len(visited),
+        "found_enemy": found_enemy,
+        "success": found_enemy,
+    }
 
 
 def report_to_json(stats):
     """TODO(Q6)：把 stats 序列化为确定性的 JSON 字符串，见题面 Q6 规范。"""
-    raise NotImplementedError("Q6 report_to_json：题面 Q6·报告序列化")
+    return json.dumps(
+        stats,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
 
 
 # ---------------------------------------------------------------------------
