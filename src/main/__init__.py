@@ -349,7 +349,78 @@ class SentryState(Enum):
 def decide(sensor, state, hp, heat):
     """TODO(Q5)：纯函数决策，返回 (action: str, new_state: SentryState)；
     sensor 字段契约、R1-R7 规则表与非法输入处理见题面 Q5 规范。"""
-    raise NotImplementedError("Q5 decide：题面 Q5·决策规则表 R1-R7")
+    required = ("enemy_frames", "enemy_dist", "robot_type", "max_hp")
+    if not isinstance(sensor, dict) or any(
+            field not in sensor for field in required):
+        raise ValueError("sensor fields are incomplete")
+    if not isinstance(state, SentryState):
+        raise ValueError("invalid sentry state")
+
+    raw_frames = sensor["enemy_frames"]
+    if not isinstance(raw_frames, (tuple, list)):
+        raise ValueError("enemy_frames must be a tuple or list")
+    if not 1 <= len(raw_frames) <= 6:
+        raise ValueError("enemy_frames length is outside the contract")
+    try:
+        frames = tuple(bool(frame) for frame in raw_frames)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("enemy_frames contains an invalid value") from exc
+
+    def normalise_distance(value):
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if not math.isfinite(numeric):
+            return None
+        return max(0, int(numeric))
+
+    distance = normalise_distance(sensor["enemy_dist"])
+    robot_type = sensor["robot_type"]
+    if not isinstance(robot_type, str) or robot_type.upper() != "HERO":
+        robot_type = "INFANTRY"
+    else:
+        robot_type = "HERO"
+    hp_pct = hp_ratio(hp, sensor["max_hp"])
+    visible = frames[-1]
+
+    # R1: low health always takes precedence over every other state.
+    if hp_pct <= 30:
+        return "RETREAT", SentryState.RETREAT
+
+    # R2-R3: these states are one-step transitions.
+    if state == SentryState.RETREAT:
+        return "RETURN", SentryState.RETURN
+    if state == SentryState.RETURN:
+        return "MOVE_BASE", SentryState.PATROL
+
+    def engagement_action():
+        if distance is not None and distance <= 3:
+            return "SHOOT", SentryState.ENGAGE
+        if robot_type == "HERO":
+            return "MOVE_RIGHT", SentryState.ENGAGE
+        return "MOVE_LEFT", SentryState.ENGAGE
+
+    # R4-R5: an ENGAGE state reacts differently to visible and lost contact.
+    if state == SentryState.ENGAGE:
+        if visible:
+            return engagement_action()
+        if len(frames) >= 2 and frames[-2]:
+            return "HOLD_FIRE", SentryState.ENGAGE
+        return "SCAN", SentryState.SUSPECT
+
+    # R6: PATROL/SUSPECT need two consecutive visible frames to engage.
+    if visible:
+        if len(frames) >= 2 and frames[-2]:
+            return engagement_action()
+        return "SCAN", SentryState.SUSPECT
+
+    # R7: default behaviour for PATROL and SUSPECT.
+    if state == SentryState.PATROL:
+        return "PATROL_MOVE", SentryState.PATROL
+    return "SCAN", SentryState.SUSPECT
 
 
 # ---------------------------------------------------------------------------
